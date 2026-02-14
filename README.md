@@ -7,7 +7,7 @@ Web app to control a Thomson Electrak HD linear actuator via CAN bus on a Raspbe
 - **Actuator**: Thomson Electrak HD (HD24B045-1000CN02MPS) — 24V, 4.5kN, 1000mm stroke, CAN bus
 - **Hat**: Sequent Microsystems Industrial Automation V2 (STM32F072V8T6 + MCP2551 CAN transceiver)
 - **SBC**: Raspberry Pi (any model with I2C)
-- **Programmer**: ST-Link V2 (for flashing custom firmware)
+- **Programmer**: ST-Link V2 or RPi I2C (for flashing custom firmware)
 
 ## How it works
 
@@ -23,6 +23,44 @@ The actuator uses the **J1939** protocol at 500 kbit/s. The web UI has hold-to-m
 
 ### 1. Flash the custom firmware
 
+Build the firmware first:
+
+```bash
+cd firmware
+pip install platformio
+pio run
+```
+
+#### Option A: Flash via I2C (no extra hardware needed)
+
+The STM32F072 has a built-in ROM bootloader that supports I2C — the same bus already connected to the RPi. No ST-Link required.
+
+1. **Enter bootloader mode**: bridge BOOT0 to 3.3V. On the PCB, R75 (15K pull-down) connects BOOT0 (STM32 pin 91) to ground. Solder or hold a wire from the BOOT0 side of R75 to any 3.3V point (e.g. J5 pin 6).
+
+2. **Power cycle** the hat (unplug/replug the RPi).
+
+3. **Verify** the bootloader is running:
+   ```bash
+   i2cdetect -y 1
+   # Should show 0x56 (bootloader) instead of 0x48 (firmware)
+   ```
+
+4. **Back up and flash**:
+   ```bash
+   cd firmware
+   pip install smbus2
+
+   # Back up original firmware
+   python3 flash_i2c.py backup backup.bin
+
+   # Flash the custom firmware
+   python3 flash_i2c.py flash .pio/build/megaind_can/firmware.bin
+   ```
+
+5. **Remove** the BOOT0 bridge and **power cycle** to boot the new firmware.
+
+#### Option B: Flash via ST-Link SWD
+
 Connect an ST-Link V2 to the **J5 SWD header** on the hat:
 
 | J5 Pin | Signal | ST-Link |
@@ -32,15 +70,11 @@ Connect an ST-Link V2 to the **J5 SWD header** on the hat:
 | 3      | GND    | GND     |
 | 6      | 3.3V   | 3.3V    |
 
-Back up the original firmware, then flash:
-
 ```bash
 # Back up (so you can restore later)
 st-flash read backup.bin 0x08000000 0x10000
 
-# Build and flash custom firmware
-cd firmware
-pip install platformio
+# Flash custom firmware
 pio run --target upload
 ```
 
@@ -115,6 +149,7 @@ cd megaind-rpi/update && ./update 0
 tub-lifter/
 ├── firmware/
 │   ├── platformio.ini          # PlatformIO build config
+│   ├── flash_i2c.py            # I2C bootloader flasher (no ST-Link needed)
 │   └── src/main.c              # STM32 I2C-to-CAN bridge firmware
 ├── src/tub_lifter/
 │   ├── actuator.py             # Electrak HD driver (I2C + J1939)
