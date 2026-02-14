@@ -41,12 +41,16 @@ import time
 from smbus2 import SMBus, i2c_msg
 
 # I2C addresses
-FIRMWARE_ADDR = 0x48     # CAN bridge firmware I2C address
+FIRMWARE_ADDR = 0x50     # MEGA-IND firmware I2C address (0x50 + jumper offset)
 BOOTLOADER_ADDR = 0x56   # STM32F072 ROM bootloader address (AN2606)
 
 # Firmware register to trigger bootloader entry
+# Sequent stock firmware: register 0xAA triggers CPU reset
+# Our firmware: register 0xF0 with magic 0xBE triggers bootloader jump
 REG_ENTER_BOOTLOADER = 0xF0
 BOOTLOADER_MAGIC = 0xBE
+# Sequent stock firmware reset register
+SEQUENT_CPU_RESET_REG = 0xAA
 
 # Flash constants
 FLASH_BASE = 0x08000000
@@ -58,20 +62,31 @@ NACK = 0x1F
 
 
 def enter_bootloader_via_firmware(bus_num=1, fw_addr=FIRMWARE_ADDR):
-    """Send the 'enter bootloader' command to the running CAN bridge firmware.
+    """Send the 'enter bootloader' command to the running firmware.
 
-    The firmware writes 0xBE to register 0xF0, which causes it to deinit
-    all peripherals and jump to the ROM bootloader at 0x1FFFC800.
-    The I2C address changes from 0x48 (firmware) to 0x56 (bootloader).
+    Tries our custom firmware command first (reg 0xF0, magic 0xBE),
+    then falls back to the Sequent stock firmware CPU reset (reg 0xAA)
+    which causes the STM32 to reset. After a reset, if BOOT0 is low
+    the stock firmware just restarts — but we can try the Sequent
+    update tool's bootEnter approach as a fallback.
     """
     bus = SMBus(bus_num)
     try:
-        bus.write_byte_data(fw_addr, REG_ENTER_BOOTLOADER, BOOTLOADER_MAGIC)
-    except OSError:
+        # Try our custom bootloader entry command first
+        try:
+            bus.write_byte_data(fw_addr, REG_ENTER_BOOTLOADER, BOOTLOADER_MAGIC)
+            return True
+        except OSError:
+            pass
+        # Try Sequent stock firmware CPU reset
+        try:
+            bus.write_byte_data(fw_addr, SEQUENT_CPU_RESET_REG, 0x00)
+            return True
+        except OSError:
+            pass
         return False
     finally:
         bus.close()
-    return True
 
 
 def wait_for_bootloader(bus_num=1, addr=BOOTLOADER_ADDR, timeout=3.0):

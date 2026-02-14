@@ -39,7 +39,7 @@
 #include <string.h>
 
 #define FW_VERSION       0x02
-#define I2C_BASE_ADDR    0x48
+#define I2C_BASE_ADDR    0x50
 #define CAN_BITRATE_500K 1
 #define BOOTLOADER_MAGIC 0xBE  /* Magic byte to trigger bootloader entry */
 #define SYSTEM_MEMORY    0x1FFFC800  /* STM32F072 ROM bootloader base */

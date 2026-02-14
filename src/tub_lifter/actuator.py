@@ -162,8 +162,8 @@ REG_TX_SEND = 0x00
 REG_RX_FRAME = 0x10
 REG_INFO = 0x20
 
-# I2C address: 0x48 + jumper offset
-I2C_BASE_ADDR = 0x48
+# I2C address: 0x50 + jumper offset (matches Sequent MEGA-IND convention)
+I2C_BASE_ADDR = 0x50
 
 
 class ElectrakHD:

@@ -10,7 +10,7 @@ from tub_lifter.actuator import ElectrakHD
 app = Flask(__name__)
 
 I2C_BUS = int(os.environ.get("I2C_BUS", "1"))
-I2C_ADDR = int(os.environ.get("I2C_ADDR", "0x48"), 0)
+I2C_ADDR = int(os.environ.get("I2C_ADDR", "0x50"), 0)
 actuator = ElectrakHD(i2c_bus=I2C_BUS, i2c_addr=I2C_ADDR)
 
 # Track whether CAN is connected
