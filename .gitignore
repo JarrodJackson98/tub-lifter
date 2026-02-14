@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pio/
+firmware/.pio/
+uv.lock
+*.bin
+schematic*.pdf
