@@ -28,14 +28,21 @@
  *
  *   0x20  INFO: Read 2 bytes: [FW_VERSION] [CAN_STATUS]
  *         CAN_STATUS bit 0: bus-off, bit 1: error passive
+ *
+ * WRITE registers (special):
+ *   0xF0  ENTER_BOOTLOADER: Write magic byte 0xBE to jump to the STM32
+ *         ROM bootloader (I2C address changes from 0x48 to 0x56).
+ *         No BOOT0 bridge or power cycle needed.
  */
 
 #include "stm32f0xx_hal.h"
 #include <string.h>
 
-#define FW_VERSION       0x01
+#define FW_VERSION       0x02
 #define I2C_BASE_ADDR    0x48
 #define CAN_BITRATE_500K 1
+#define BOOTLOADER_MAGIC 0xBE  /* Magic byte to trigger bootloader entry */
+#define SYSTEM_MEMORY    0x1FFFC800  /* STM32F072 ROM bootloader base */
 
 /* ---- Register file shared between I2C ISR and main loop ---- */
 
@@ -58,6 +65,9 @@ static volatile struct {
     uint8_t  overrun;
 } rx_buf;
 
+/* Flag to enter bootloader from main loop */
+static volatile uint8_t enter_bootloader = 0;
+
 /* ---- Peripheral handles ---- */
 static CAN_HandleTypeDef hcan;
 static I2C_HandleTypeDef hi2c1;
@@ -76,6 +86,7 @@ static uint8_t ReadIDJumpers(void);
 static void LED_Set(int on);
 static void CAN_SendFrame(void);
 static void PrepareRxResponse(void);
+static void JumpToBootloader(void);
 
 /* ================================================================== */
 
@@ -108,14 +119,16 @@ int main(void)
     LED_Set(1);  /* LED on = firmware running */
 
     while (1) {
+        /* Jump to ROM bootloader if requested via I2C register 0xF0 */
+        if (enter_bootloader) {
+            JumpToBootloader();
+        }
+
         /* Send CAN frame if I2C master wrote one */
         if (tx_buf.pending) {
             CAN_SendFrame();
             tx_buf.pending = 0;
         }
-
-        /* Blink LED when CAN traffic present */
-        /* (keep it simple - just leave LED on) */
     }
 }
 
@@ -233,6 +246,45 @@ static void CAN_SendFrame(void)
     HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_0);
 }
 
+/* ---- Jump to ROM bootloader (no BOOT0 bridge needed) ---- */
+static void JumpToBootloader(void)
+{
+    /* Disable all interrupts */
+    __disable_irq();
+
+    /* Deinit all peripherals to reset them to default state */
+    HAL_CAN_Stop(&hcan);
+    HAL_CAN_DeInit(&hcan);
+    HAL_I2C_DeInit(&hi2c1);
+    HAL_DeInit();
+
+    /* Disable SysTick */
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL  = 0;
+
+    /* Clear all pending interrupts */
+    for (int i = 0; i < 8; i++) {
+        NVIC->ICER[i] = 0xFFFFFFFF;
+        NVIC->ICPR[i] = 0xFFFFFFFF;
+    }
+
+    /* Remap system memory to address 0x00000000 */
+    __HAL_SYSCFG_REMAPMEMORY_SYSTEMFLASH();
+
+    /* Set MSP to the bootloader's stack pointer (first word of system memory) */
+    __set_MSP(*(volatile uint32_t *)SYSTEM_MEMORY);
+
+    /* Jump to the bootloader reset handler (second word of system memory) */
+    void (*bootloader)(void) = (void (*)(void))(*(volatile uint32_t *)(SYSTEM_MEMORY + 4));
+
+    __enable_irq();
+    bootloader();
+
+    /* Should never reach here */
+    while (1);
+}
+
 /* ---- CAN RX interrupt callback ---- */
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *h)
 {
@@ -334,6 +386,9 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
             if (tx_buf.dlc > 8) tx_buf.dlc = 8;
             memcpy((void *)tx_buf.data, (const void *)&i2c_rx_buf[7], 8);
             tx_buf.pending = 1;
+        } else if (i2c_reg_addr == 0xF0 && i2c_rx_buf[1] == BOOTLOADER_MAGIC) {
+            /* ENTER_BOOTLOADER: jump to ROM bootloader (handled in main loop) */
+            enter_bootloader = 1;
         }
     }
 }

@@ -35,28 +35,31 @@ pio run
 
 The STM32F072 has a built-in ROM bootloader that supports I2C — the same bus already connected to the RPi. No ST-Link required.
 
+**Updating** (custom firmware already installed):
+
+```bash
+cd firmware
+python3 flash_i2c.py flash .pio/build/megaind_can/firmware.bin
+```
+
+The script automatically tells the running firmware to jump to the ROM bootloader, flashes, verifies, and boots the new firmware.
+
+**First-time flash** (replacing stock Sequent firmware):
+
 1. **Enter bootloader mode**: bridge BOOT0 to 3.3V. On the PCB, R75 (15K pull-down) connects BOOT0 (STM32 pin 91) to ground. Solder or hold a wire from the BOOT0 side of R75 to any 3.3V point (e.g. J5 pin 6).
-
 2. **Power cycle** the hat (unplug/replug the RPi).
-
 3. **Verify** the bootloader is running:
    ```bash
    i2cdetect -y 1
    # Should show 0x56 (bootloader) instead of 0x48 (firmware)
    ```
-
 4. **Back up and flash**:
    ```bash
    cd firmware
    pip install smbus2
-
-   # Back up original firmware
-   python3 flash_i2c.py backup backup.bin
-
-   # Flash the custom firmware
-   python3 flash_i2c.py flash .pio/build/megaind_can/firmware.bin
+   python3 flash_i2c.py --no-enter-bootloader backup backup.bin
+   python3 flash_i2c.py --no-enter-bootloader flash .pio/build/megaind_can/firmware.bin
    ```
-
 5. **Remove** the BOOT0 bridge and **power cycle** to boot the new firmware.
 
 #### Option B: Flash via ST-Link SWD
@@ -127,6 +130,7 @@ Default actuator node ID: 19 (0x13), baud rate: 500 kbit/s.
 | `0x00` | W | 14 | Send CAN frame: `[ID3 ID2 ID1 ID0] [FLAGS] [DLC] [D0..D7]` |
 | `0x10` | R | 15 | Last RX frame: `[STATUS] [ID3..ID0] [FLAGS] [DLC] [D0..D7]` |
 | `0x20` | R | 2 | Info: `[FW_VERSION] [CAN_STATUS]` |
+| `0xF0` | W | 1 | Enter bootloader: write `0xBE` to jump to ROM bootloader |
 
 FLAGS bit 0 = extended (29-bit) ID. STATUS bit 0 = frame valid, bit 1 = overrun.
 
