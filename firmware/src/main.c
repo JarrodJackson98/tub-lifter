@@ -263,11 +263,9 @@ static void JumpToBootloader(void)
     SysTick->LOAD = 0;
     SysTick->VAL  = 0;
 
-    /* Clear all pending interrupts */
-    for (int i = 0; i < 8; i++) {
-        NVIC->ICER[i] = 0xFFFFFFFF;
-        NVIC->ICPR[i] = 0xFFFFFFFF;
-    }
+    /* Clear all pending interrupts (Cortex-M0 has 1 ICER/ICPR register) */
+    NVIC->ICER[0] = 0xFFFFFFFF;
+    NVIC->ICPR[0] = 0xFFFFFFFF;
 
     /* Remap system memory to address 0x00000000 */
     __HAL_SYSCFG_REMAPMEMORY_SYSTEMFLASH();
