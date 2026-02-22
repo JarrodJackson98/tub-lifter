@@ -10,7 +10,12 @@ set -e
 
 # --- 1. /boot/config.txt dtoverlays ---
 
-CONFIG="/boot/config.txt"
+# Newer Raspberry Pi OS uses /boot/firmware/config.txt
+if [ -f /boot/firmware/config.txt ]; then
+    CONFIG="/boot/firmware/config.txt"
+else
+    CONFIG="/boot/config.txt"
+fi
 echo "Checking $CONFIG for MCP2515 dtoverlays..."
 
 OVERLAYS_NEEDED=false
