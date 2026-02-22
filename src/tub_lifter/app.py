@@ -1,6 +1,6 @@
 """
 Tub Lifter - Web interface for controlling a Thomson Electrak HD linear actuator
-via CAN bus on a Raspberry Pi with Sequent Microsystems MEGA-IND hat.
+via CAN bus on a Raspberry Pi with a Waveshare 2-CH CAN HAT.
 """
 
 import os
@@ -9,9 +9,8 @@ from tub_lifter.actuator import ElectrakHD
 
 app = Flask(__name__)
 
-I2C_BUS = int(os.environ.get("I2C_BUS", "1"))
-I2C_ADDR = int(os.environ.get("I2C_ADDR", "0x50"), 0)
-actuator = ElectrakHD(i2c_bus=I2C_BUS, i2c_addr=I2C_ADDR)
+CAN_CHANNEL = os.environ.get("CAN_CHANNEL", "can0")
+actuator = ElectrakHD(channel=CAN_CHANNEL)
 
 # Track whether CAN is connected
 can_connected = False

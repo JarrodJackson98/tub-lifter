@@ -5,7 +5,7 @@ description = "Web app to control a Thomson Electrak HD linear actuator via CAN 
 requires-python = ">=3.10"
 dependencies = [
     "flask>=3.0",
-    "smbus2>=0.4",
+    "python-can>=4.0",
 ]
 
 [build-system]

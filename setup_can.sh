@@ -1,27 +1,55 @@
 #!/bin/bash
-# Setup for Tub Lifter on Raspberry Pi.
+# Setup for Tub Lifter on Raspberry Pi with Waveshare 2-CH CAN HAT (WS-17912).
 #
-# The MEGA-IND V2 hat communicates with the RPi via I2C. Our custom
-# firmware on the STM32F072V8T6 bridges I2C <-> CAN at 500 kbit/s.
+# The HAT uses two MCP2515 CAN controllers with SN65HVD230 transceivers,
+# exposed as SocketCAN interfaces (can0/can1) via kernel dtoverlays.
 #
-# Prerequisites:
-#   1. Flash the custom firmware (firmware/ dir) via ST-Link SWD (J5 header)
-#   2. I2C must be enabled on the RPi (sudo raspi-config -> Interface Options)
-#
-# Flashing firmware (requires ST-Link V2 connected to J5):
-#   cd firmware && pio run --target upload
+# Run this script once after installing the HAT, then reboot.
 
 set -e
 
-echo "Checking I2C bus..."
-if ! command -v i2cdetect &> /dev/null; then
-    echo "Installing i2c-tools..."
-    sudo apt-get install -y i2c-tools
+# --- 1. /boot/config.txt dtoverlays ---
+
+CONFIG="/boot/config.txt"
+echo "Checking $CONFIG for MCP2515 dtoverlays..."
+
+OVERLAYS_NEEDED=false
+
+if ! grep -q "^dtoverlay=mcp2515-can0" "$CONFIG" 2>/dev/null; then
+    OVERLAYS_NEEDED=true
 fi
 
-echo "Scanning I2C bus 1 for CAN bridge (expect 0x48)..."
-i2cdetect -y 1
+if [ "$OVERLAYS_NEEDED" = true ]; then
+    echo "Adding MCP2515 dtoverlays to $CONFIG..."
+    sudo tee -a "$CONFIG" > /dev/null <<'EOF'
+
+# Waveshare 2-CH CAN HAT
+dtparam=spi=on
+dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23,spimaxfrequency=2000000
+dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=25,spimaxfrequency=2000000
+EOF
+    echo "Overlays added. A reboot is required before CAN interfaces appear."
+else
+    echo "MCP2515 overlays already present."
+fi
+
+# --- 2. Install can-utils for diagnostics ---
+
+if ! command -v candump &> /dev/null; then
+    echo "Installing can-utils..."
+    sudo apt-get install -y can-utils
+else
+    echo "can-utils already installed."
+fi
+
+# --- 3. Bring up can0 at 500 kbit/s ---
 
 echo ""
-echo "If you see 0x48 on the bus, the CAN bridge firmware is running."
-echo "Start the web app with: uv run tub-lifter"
+echo "Bringing up can0 at 500 kbit/s..."
+sudo ip link set can0 down 2>/dev/null || true
+sudo ip link set can0 up type can bitrate 500000
+ip -details link show can0
+
+echo ""
+echo "CAN bus ready. Test with:  candump can0"
+echo "Start the web app with:    uv run tub-lifter"

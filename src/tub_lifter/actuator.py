@@ -1,13 +1,13 @@
 """
 Thomson Electrak HD (HD24B045-1000CN02MPS) CAN bus driver.
 
-Communicates via J1939 protocol through the MEGA-IND hat's I2C-to-CAN bridge
-firmware (STM32F072V8T6).
+Communicates via J1939 protocol over SocketCAN (Waveshare 2-CH CAN HAT with
+MCP2515 controller, kernel dtoverlay provides can0/can1 interfaces).
 
 - PGN 61184 (0xEF00): Actuator Control Message (ACM)
 - PGN 126720: Actuator Feedback Message (AFM)
 - Default node ID: 19 (0x13)
-- Baud rate: 500 kbit/s (configured in STM32 firmware)
+- Baud rate: 500 kbit/s (configured via `ip link`)
 - Stroke: 1000mm
 
 Reference: https://github.com/collinbrake/electrakHDCAN
@@ -18,9 +18,9 @@ import threading
 import time
 
 try:
-    from smbus2 import SMBus
+    import can
 except ImportError:
-    SMBus = None
+    can = None
 
 
 def _reverse_bits(num, bit_count):
@@ -85,18 +85,13 @@ class ActuatorControlMessage:
         data[7] = 0xFF
         return data
 
-    def to_i2c_payload(self):
-        """Pack into 14-byte I2C write payload for the CAN bridge firmware."""
-        can_id = self.arbitration_id
-        data = self.encode()
-        return [
-            (can_id >> 24) & 0xFF,
-            (can_id >> 16) & 0xFF,
-            (can_id >> 8) & 0xFF,
-            can_id & 0xFF,
-            0x01,  # flags: extended 29-bit ID
-            8,     # DLC
-        ] + list(data)
+    def to_can_message(self):
+        """Build a python-can Message for transmission."""
+        return can.Message(
+            arbitration_id=self.arbitration_id,
+            data=self.encode(),
+            is_extended_id=True,
+        )
 
 
 class ActuatorFeedbackMessage:
@@ -117,27 +112,17 @@ class ActuatorFeedbackMessage:
     def _extract_pgn(can_id):
         return (can_id >> 8) & 0x3FF00
 
-    def decode_i2c(self, rx_data):
-        """Decode from I2C RX_FRAME register read (15 bytes).
+    def decode_can(self, msg):
+        """Decode from a python-can Message.
 
-        Format: [STATUS] [ID3 ID2 ID1 ID0] [FLAGS] [DLC] [D0..D7]
+        Checks PGN and extracts feedback fields from the 8 data bytes.
         """
-        status = rx_data[0]
-        if not (status & 0x01):
-            self.valid = False
-            return
-
-        can_id = (
-            (rx_data[1] << 24) | (rx_data[2] << 16) |
-            (rx_data[3] << 8) | rx_data[4]
-        )
-
-        pgn = self._extract_pgn(can_id)
+        pgn = self._extract_pgn(msg.arbitration_id)
         if pgn != self.TARGET_PGN:
             self.valid = False
             return
 
-        d = rx_data[7:15]  # 8 data bytes
+        d = msg.data
         rb = _reverse_bits
 
         def get_bits(d1, d2, shift, mask, length):
@@ -157,22 +142,13 @@ class ActuatorFeedbackMessage:
 
 STROKE_MM = 1000.0  # HD24B045-1000CN02MPS has 1000mm stroke
 
-# I2C bridge firmware registers
-REG_TX_SEND = 0x00
-REG_RX_FRAME = 0x10
-REG_INFO = 0x20
-
-# I2C address: 0x50 + jumper offset (matches Sequent MEGA-IND convention)
-I2C_BASE_ADDR = 0x50
-
 
 class ElectrakHD:
     """High-level interface for controlling the Thomson Electrak HD actuator
-    via the MEGA-IND hat I2C-to-CAN bridge firmware."""
+    via SocketCAN (Waveshare 2-CH CAN HAT)."""
 
-    def __init__(self, i2c_bus=1, i2c_addr=I2C_BASE_ADDR):
-        self.i2c_bus_num = i2c_bus
-        self.i2c_addr = i2c_addr
+    def __init__(self, channel="can0"):
+        self.channel = channel
         self.bus = None
         self._running = False
         self._tx_thread = None
@@ -183,11 +159,11 @@ class ElectrakHD:
         self.feedback = ActuatorFeedbackMessage()
 
     def connect(self):
-        if SMBus is None:
+        if can is None:
             raise RuntimeError(
-                "smbus2 not available - install it or run on Raspberry Pi"
+                "python-can not available - install it or run on Raspberry Pi"
             )
-        self.bus = SMBus(self.i2c_bus_num)
+        self.bus = can.Bus(channel=self.channel, interface="socketcan")
         self._running = True
         self._tx_thread = threading.Thread(target=self._tx_loop, daemon=True)
         self._tx_thread.start()
@@ -198,7 +174,7 @@ class ElectrakHD:
             self._tx_thread.join(timeout=2)
         self.stop()
         if self.bus:
-            self.bus.close()
+            self.bus.shutdown()
             self.bus = None
 
     def extend(self, speed_pct=50):
@@ -235,22 +211,14 @@ class ElectrakHD:
                 "motion_enabled": self._motion_enable,
             }
 
-    def _send_can_frame(self, acm):
-        """Send a CAN frame via the I2C-to-CAN bridge."""
-        payload = acm.to_i2c_payload()
-        self.bus.write_i2c_block_data(self.i2c_addr, REG_TX_SEND, payload)
-
-    def _read_can_frame(self):
-        """Read last received CAN frame from the bridge."""
-        data = self.bus.read_i2c_block_data(self.i2c_addr, REG_RX_FRAME, 15)
-        self.feedback.decode_i2c(data)
-
     def _tx_loop(self):
         """Send ACM at ~100ms intervals (J1939 recommended rate), read feedback."""
         while self._running:
             # Read any available feedback from CAN bus
             try:
-                self._read_can_frame()
+                msg = self.bus.recv(timeout=0.05)
+                if msg is not None:
+                    self.feedback.decode_can(msg)
             except Exception:
                 pass
 
@@ -262,8 +230,8 @@ class ElectrakHD:
 
             acm = ActuatorControlMessage(pos, spd, motion_enable=mot)
             try:
-                self._send_can_frame(acm)
+                self.bus.send(acm.to_can_message())
             except Exception:
                 pass
 
-            time.sleep(0.1)
+            time.sleep(0.05)
