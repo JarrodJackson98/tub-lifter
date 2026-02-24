@@ -7,7 +7,7 @@ MCP2515 controller, kernel dtoverlay provides can0/can1 interfaces).
 - PGN 61184 (0xEF00): Actuator Control Message (ACM)
 - PGN 126720: Actuator Feedback Message (AFM)
 - Default node ID: 19 (0x13)
-- Baud rate: 500 kbit/s (configured via `ip link`)
+- Baud rate: 250 kbit/s (configured via `ip link`)
 - Stroke: 1000mm
 
 Reference: https://github.com/collinbrake/electrakHDCAN

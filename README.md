@@ -16,7 +16,7 @@ The Waveshare HAT provides two isolated CAN channels via MCP2515 controllers. Li
 Browser  →  Flask (RPi)  →  SocketCAN (python-can)  →  MCP2515 (kernel)  →  CAN bus  →  Actuator
 ```
 
-The actuator uses the **J1939** protocol at 500 kbit/s. The web UI has hold-to-move buttons (extend/retract while pressed) and go-to-position buttons (full extend/retract).
+The actuator uses the **J1939** protocol at 250 kbit/s. The web UI has hold-to-move buttons (extend/retract while pressed) and go-to-position buttons (full extend/retract).
 
 ## Setup
 
@@ -35,7 +35,7 @@ This adds the MCP2515 dtoverlays to `/boot/config.txt` (oscillator=16MHz, INT on
 After reboot, bring up the CAN interface:
 
 ```bash
-sudo ip link set can0 up type can bitrate 500000
+sudo ip link set can0 up type can bitrate 250000
 ```
 
 Verify:
@@ -81,7 +81,7 @@ The Thomson Electrak HD uses J1939 with these messages:
 - **AFM** (Actuator Feedback Message) — PGN 126720
   - Position, current, speed, error flags
 
-Default actuator node ID: 19 (0x13), baud rate: 500 kbit/s.
+Default actuator node ID: 19 (0x13), baud rate: 250 kbit/s.
 
 ## Project structure
 

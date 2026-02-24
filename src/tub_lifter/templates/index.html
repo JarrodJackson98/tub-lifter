@@ -142,6 +142,50 @@
             margin-top: 0;
         }
 
+        .speed-control {
+            margin-top: 0.5rem;
+            padding: 0.8rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .speed-label {
+            font-size: 0.8rem;
+            color: #888;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .speed-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        .speed-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 28px;
+            height: 28px;
+            background: #0077b6;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .speed-slider::-moz-range-thumb {
+            width: 28px;
+            height: 28px;
+            background: #0077b6;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
         .position-label {
             font-size: 0.8rem;
             color: #888;
@@ -154,6 +198,15 @@
     <div class="container">
         <h1>Tub Lifter</h1>
         <p class="subtitle">Thomson Electrak HD</p>
+
+        <div class="speed-control">
+            <div class="speed-label">
+                <span>Speed</span>
+                <span id="speedValue">50%</span>
+            </div>
+            <input type="range" class="speed-slider" id="speedSlider"
+                   min="20" max="100" step="5" value="50">
+        </div>
 
         <p class="section-label">Hold to move</p>
         <div class="controls">
@@ -186,21 +239,32 @@
         const posDisplay = document.getElementById("positionDisplay");
         const posBar = document.getElementById("positionBar");
         const posValue = document.getElementById("positionValue");
+        const speedSlider = document.getElementById("speedSlider");
+        const speedValueEl = document.getElementById("speedValue");
         const STROKE_MM = 1000;
+
+        speedSlider.addEventListener("input", () => {
+            speedValueEl.textContent = speedSlider.value + "%";
+        });
 
         async function sendCommand(action) {
             statusEl.className = "status-bar";
             statusEl.textContent = "Sending...";
 
+            const opts = { method: "POST", headers: { "Content-Type": "application/json" } };
+            if (action !== "stop") {
+                opts.body = JSON.stringify({ speed: parseInt(speedSlider.value) });
+            }
+
             try {
-                const res = await fetch(`/api/${action}`, { method: "POST" });
+                const res = await fetch(`/api/${action}`, opts);
                 const data = await res.json();
 
                 if (data.ok) {
                     statusEl.className = "status-bar ok";
                     statusEl.textContent = action === "stop"
                         ? "Stopped"
-                        : `${action.charAt(0).toUpperCase() + action.slice(1)}ing...`;
+                        : `${action.charAt(0).toUpperCase() + action.slice(1)}ing at ${speedSlider.value}%...`;
                 } else {
                     statusEl.className = "status-bar error";
                     statusEl.textContent = data.error || "Command failed";

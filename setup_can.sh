@@ -47,12 +47,13 @@ else
     echo "can-utils already installed."
 fi
 
-# --- 3. Bring up can0 at 500 kbit/s ---
+# --- 3. Bring up can0 at 250 kbit/s ---
 
 echo ""
-echo "Bringing up can0 at 500 kbit/s..."
+echo "Bringing up can0 at 250 kbit/s..."
 sudo ip link set can0 down 2>/dev/null || true
-sudo ip link set can0 up type can bitrate 500000
+sudo ip link set can0 up type can bitrate 250000
+sudo ip link set can0 txqueuelen 100
 ip -details link show can0
 
 echo ""
