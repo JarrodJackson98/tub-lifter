@@ -9,3 +9,4 @@ firmware/.pio/
 uv.lock
 *.bin
 schematic*.pdf
+.DS_Store
